@@ -3,6 +3,9 @@
 LLM (Large Language Model) based chat bot using RAG (Retrieval-augmented generation) and langchain.
 Chat bot has access to trade register documents related to Ticos Systems company and is able to answer any question related to this company not only giving answer but also referencing the source document.
 
+<img src="ticos2.png" width="500px"/>
+<img src="ticos1.png" width="500px"/>
+
 as language model HuggingFaceH4/zephyr-7b-beta was used
 to run chat in browser streamlit library was used
 

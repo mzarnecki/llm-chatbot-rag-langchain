@@ -14,7 +14,7 @@ Geschäftsanteil (Nr.) Nennbetrag (je Anteil)
 
 Veränderungsspalte
 
-Ticos Systems AG                                1
+Ticos Systems AG                          
 
 mit Sitz Neuhausen am Rheinfall
 eingetragen beim Handelsregisteramt
@@ -26,7 +26,7 @@ CH-8200 Schaffhausen, Rheinweg 6)
 
 DEM 17.000,-
 
-Ticos Systems AG                               2
+Ticos Systems AG                           
 
 mit Sitz Neuhausen am Rheinfall
 eingetragen beim Handelsregisteramt
@@ -38,7 +38,6 @@ CH-8200 Schaffhausen, Rheinweg 6)
 
 DEM 17.000,-
 
--2-
 
 Ticos Systems AG
 
