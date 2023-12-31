@@ -20,3 +20,5 @@ based on article https://medium.com/mlearning-ai/create-a-chatbot-in-python-with
 
 3. run script with command:
 `streamlit run index.py`
+
+To run it for your purpose you can replace source documents in /data dir and prompt in index.py.
