@@ -1,4 +1,4 @@
-# RAG
+# chatbot based on language model with access to source documents 
 
 LLM (Large Language Model) based chat bot using RAG (Retrieval-augmented generation) and langchain.
 Chat bot has access to trade register documents related to Ticos Systems company and is able to answer any question related to this company not only giving answer but also referencing the source document.
