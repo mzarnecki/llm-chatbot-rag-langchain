@@ -1,1 +1,4 @@
 .env
+.idea
+.ipynb_checkpoints
+db

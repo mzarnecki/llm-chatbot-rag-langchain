@@ -1,218 +1,117 @@
-#load libraries
-import time
-import pandas as pd
-from tqdm import tqdm
-from pathlib import Path
-import pandas as pd
 import os
-from dotenv import load_dotenv
-from langchain.document_loaders import DataFrameLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
-from langchain.vectorstores import FAISS
-from langchain.chat_models import ChatOpenAI
-from langchain.llms import HuggingFaceHub
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
-from langchain.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-)
-from pprint import pprint
+from lib import utils
+from lib.streaming import StreamHandler
 import streamlit as st
 
-def create_dataset(list_of_documents: list) -> pd.DataFrame:
-    """
-    create a Pandas DataFrame of trade register documents.
-    """
-    data = []
-    for name in tqdm(list_of_documents, desc="Documents"):
-        content = Path(f'data/{name}').read_text()
-        d = {
-            "content": content,
-            "title": name
-        }
-        data.append(d)
-    df = pd.DataFrame(data)
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
+from langchain_community.vectorstores import DocArrayInMemorySearch
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+from langchain_core.prompts import SystemMessagePromptTemplate, ChatPromptTemplate
 
-    return df
+st.set_page_config(page_title="ChatPDF", page_icon="📄")
+st.header('AI chat - search for information in source documents with RAG')
+st.write('This application has access to custom documents and can respond to user queries by referring to the content within those documents.')
 
-list_of_documents = [
-    'chronological-excerpt.txt',
-    'registration.txt',
-    'shareholder-list.txt'
-]
-df = create_dataset(list_of_documents)
-df.to_csv("./data/dataset.csv", index=False)
+class CustomDocChatbot:
 
-def load_dataset(dataset_name:str="dataset.csv") -> pd.DataFrame:
-    """
-    Load dataset from file_path
+    def __init__(self):
+        utils.sync_st_session()
+        self.llm = utils.configure_llm()
+        self.embedding_model = utils.configure_embedding_model()
 
-    Args:
-        dataset_name (str, optional): Dataset name. Defaults to "dataset.csv".
+    @st.spinner('Analyzing documents..')
+    def import_source_documents(self):
+        # load documents
+        docs = []
+        files = []
+        for file in os.listdir("data"):
+            if file.endswith(".txt"):
+                with open(os.path.join("data", file)) as f:
+                    docs.append(os.path.join("data", f.read()))
+                    files.append(file)
 
-    Returns:
-        pd.DataFrame: Dataset
-    """
-    data_dir = "./data"
-    file_path = os.path.join(data_dir, dataset_name)
-    df = pd.read_csv(file_path)
-    return df
-
-def create_chunks(dataset:pd.DataFrame, chunk_size:int, chunk_overlap:int) -> list:
-    """
-    Create chunks from the dataset
-
-    Args:
-        dataset (pd.DataFrame): Dataset
-        chunk_size (int): Chunk size
-        chunk_overlap (int): Chunk overlap
-
-    Returns:
-        list: List of chunks
-    """
-    text_chunks = DataFrameLoader(
-        dataset, page_content_column="content"
-    ).load_and_split(
-        text_splitter=RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=0, length_function=len
+        # Split documents and store in vector db
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
         )
-    )
-    # aggiungiamo i metadati ai chunk stessi per facilitare il lavoro di recupero
-    for doc in text_chunks:
-        title = doc.metadata["title"]
-        content = doc.page_content
-        final_content = f"TITLE: {title}\DESCRIPTION: {title}\BODY: {content}"
-        doc.page_content = final_content
 
-    return text_chunks
+        splits = []
+        for i, doc in enumerate(docs):
+            for chunk in text_splitter.split_text(doc):
+                splits.append(Document(page_content=chunk, metadata={"source": files[i]}))
 
-def create_or_get_vector_store(chunks: list) -> FAISS:
-    """
-    Create or get vector store
+        vectordb = DocArrayInMemorySearch.from_documents(splits, self.embedding_model)
 
-    Args:
-        chunks (list): List of chunks
-
-    Returns:
-        FAISS: Vector store
-    """
-
-    embeddings = HuggingFaceInstructEmbeddings()
-
-    if not os.path.exists("./db"):
-        print("CREATING DB")
-        vectorstore = FAISS.from_documents(
-            chunks, embeddings
+        # Define retriever
+        retriever = vectordb.as_retriever(
+            search_type='mmr',
+            search_kwargs={'k':2, 'fetch_k':4}
         )
-        vectorstore.save_local("./db")
-    else:
-        print("LOADING DB")
-        vectorstore = FAISS.load_local("./db", embeddings)
-    print(vectorstore)
-    return vectorstore
 
-def get_conversation_chain(vector_store:FAISS, system_message:str, human_message:str) -> ConversationalRetrievalChain:
-    """
-    Get the chatbot conversation chain
+        # Setup memory for contextual conversation
+        memory = ConversationBufferMemory(
+            memory_key='chat_history',
+            output_key='answer',
+            return_messages=True
+        )
 
-    Args:
-        vector_store (FAISS): Vector store
-        system_message (str): System message
-        human_message (str): Human message
+        system_message_prompt = SystemMessagePromptTemplate.from_template(
+            """
+            You are a chatbot tasked with responding to questions about the Ticos Systems company.
+         
+            You should never answer a question with a question, and you should always respond with the most relevant page from documents.
+         
+            Do not answer questions that are not about the Ticos Systems company.
+         
+            Given a question, you should respond with the most relevant documents page
+            {context}
+            """
+        )
 
-    Returns:
-        ConversationalRetrievalChain: Chatbot conversation chain
-    """
-    llm = HuggingFaceHub(repo_id="HuggingFaceH4/zephyr-7b-beta") # if you want to use open source LLMs
-    memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-    conversation_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=vector_store.as_retriever(),
-        memory=memory,
-        combine_docs_chain_kwargs={
-            "prompt": ChatPromptTemplate.from_messages(
-                [
-                    system_message,
-                    human_message,
-                ]
-            ),
-        },
-    )
-    return conversation_chain
+        prompt = ChatPromptTemplate.from_messages([system_message_prompt])
 
-def handle_style_and_responses(user_question: str) -> None:
-    """
-    Handle user input to create the chatbot conversation in Streamlit
+        # Setup LLM and QA chain
+        qa_chain = ConversationalRetrievalChain.from_llm(
+            llm=self.llm,
+            retriever=retriever,
+            memory=memory,
+            return_source_documents=True,
+            verbose=False,
+            combine_docs_chain_kwargs={"prompt": prompt}
+        )
 
-    Args:
-        user_question (str): User question
-    """
-    response = st.session_state.conversation({"question": user_question})
-    st.session_state.chat_history = response["chat_history"]
+        return qa_chain
 
-    human_style = "background-color: #e6f7ff; border-radius: 10px; padding: 10px;"
-    chatbot_style = "background-color: #f9f9f9; border-radius: 10px; padding: 10px;"
+    @utils.enable_chat_history
+    def main(self):
+        user_query = st.chat_input(placeholder="Ask for information from documents")
 
-    for i, message in enumerate(st.session_state.chat_history):
-        if i % 2 == 0:
-            st.markdown(
-                f"<p style='text-align: right;'><b>User</b></p> <p style='text-align: right;{human_style}'> <i>{message.content}</i> </p>",
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f"<p style='text-align: left;'><b>Chatbot</b></p> <p style='text-align: left;{chatbot_style}'> <i>{message.content}</i> </p>",
-                unsafe_allow_html=True,
-            )
-   
-load_dotenv() # need to create a file called .env in the root of the working folder and insert our Hugging Face API key
-df = load_dataset()
-chunks = create_chunks(df, 1000, 0)
-system_message_prompt = SystemMessagePromptTemplate.from_template(
-    """
-    You are a chatbot tasked with responding to questions about the Ticos Systems company.
+        if user_query:
+            qa_chain = self.import_source_documents()
 
-    You should never answer a question with a question, and you should always respond with the most relevant page from documents.
+            utils.display_msg(user_query, 'user')
 
-    Do not answer questions that are not about the Ticos Systems company.
+            with st.chat_message("assistant"):
+                st_cb = StreamHandler(st.empty())
 
-    Given a question, you should respond with the most relevant documents page by following the relevant context below:\n
-    {context}
-    """
-)
-human_message_prompt = HumanMessagePromptTemplate.from_template("{question}")
+                result = qa_chain.invoke(
+                    {"question":user_query},
+                    {"callbacks": [st_cb]}
+                )
+                response = result["answer"]
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                utils.print_qa(CustomDocChatbot, user_query, response)
 
+                # to show references
+                for  doc in result['source_documents']:
+                    filename = os.path.basename(doc.metadata['source'])
+                    ref_title = f":blue[Source document: {filename}]"
+                    with st.popover(ref_title):
+                        st.caption(doc.page_content)
 
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = create_or_get_vector_store(chunks)
-if "conversation" not in st.session_state:
-    st.session_state.conversation = None
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = None
-st.set_page_config(
-    page_title="Company Register Documents Chatbot",
-    page_icon=":books:",
-)
-
-st.title("Company Register Documents Chatbot")
-st.subheader("Chat with all information about Ticos Systems Company!")
-st.markdown(
-    """
-    This chatbot was created to answer questions about the Ticos Systems Company.
-    Ask a question and the chatbot will respond with the most relevant page of documents.
-    """
-)
-# Image from Alexandra Koch on pixabay
-st.image("https://cdn.pixabay.com/photo/2023/01/15/17/19/robot-7720755_1280.jpg") 
-
-user_question = st.text_input("Ask your question")
-with st.spinner("Processing..."):
-    if user_question:
-        handle_style_and_responses(user_question)
-
-st.session_state.conversation = get_conversation_chain(
-    st.session_state.vector_store, system_message_prompt, human_message_prompt
-)
+if __name__ == "__main__":
+    obj = CustomDocChatbot()
+    obj.main()
