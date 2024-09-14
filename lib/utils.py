@@ -1,7 +1,5 @@
 import os
-import openai
 import streamlit as st
-from datetime import datetime
 from streamlit.logger import get_logger
 from langchain_openai import ChatOpenAI
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
