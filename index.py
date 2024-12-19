@@ -10,7 +10,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from langchain_core.prompts import SystemMessagePromptTemplate, ChatPromptTemplate
 
-st.set_page_config(page_title="ChatPDF", page_icon="📄")
+st.set_page_config(page_title="Chat", page_icon="📄")
 st.header('AI chat - search for information in source documents with RAG')
 st.write('This application has access to custom documents and can respond to user queries by referring to the content within those documents.')
 
@@ -47,7 +47,7 @@ class CustomDocChatbot:
 
         # Define retriever
         retriever = vectordb.as_retriever(
-            search_type='mmr',
+            search_type='similarity',
             search_kwargs={'k':2, 'fetch_k':4}
         )
 
@@ -60,14 +60,11 @@ class CustomDocChatbot:
 
         system_message_prompt = SystemMessagePromptTemplate.from_template(
             """
-            You are a chatbot tasked with responding to questions about the Ticos Systems company.
-         
-            You should never answer a question with a question, and you should always respond with the most relevant page from documents.
-         
-            Do not answer questions that are not about the Ticos Systems company.
-         
-            Given a question, you should respond with the most relevant documents page
+            You are a chatbot tasked with responding to questions based on attached websites content below.
             {context}
+            
+            Considering text above answer following question. Deepend only on source documents.
+            {question}
             """
         )
 

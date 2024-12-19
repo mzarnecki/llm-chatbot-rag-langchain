@@ -9,14 +9,13 @@ as language model OpenAI GPT-4o was used
 to run chat in browser streamlit library was used
 
 ## Usage
-1. before run install needed libraries as below:
+1. before run install needed libraries as below:\
 `pip install -r requirements.txt`
 
-2. create .env file with hugiingface token environment variable 
-`HUGGINGFACEHUB_API_TOKEN="your_token_from_huggingface.com"`
+2. create .env file with OpenAI token environment variable \
 `OPENAI_API_KEY="your_token_from_openai"`
 
-3. run script with command:
+3. run script with command:\
 `streamlit run index.py`
 
 To run it for your purpose you can replace source documents in /data dir and prompt in index.py.
